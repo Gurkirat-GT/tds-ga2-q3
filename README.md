@@ -18,7 +18,8 @@ GET http://127.0.0.1:8000/stats?values=1,2,3
 The only allowed browser origin is `https://dash-u3q2xa.example.com`.
 Every HTTP response includes `X-Request-ID` and `X-Process-Time`.
 
-## Deploy on Render
+## Deploy on Vercel
 
-Create a new Render Blueprint deployment from this repository and use
-`render.yaml`. Render will install `requirements.txt` and launch the ASGI app.
+Import this GitHub repository into Vercel or run `npx vercel --prod` from the
+project root. Vercel detects the FastAPI `app` in `main.py` and installs the
+dependencies from `requirements.txt`.
