@@ -34,6 +34,10 @@ query overrides. The `api_key` value is always masked in its response.
 variable and computes event counts and positive-amount revenue from each
 request batch.
 
+`GET /work?n=K` performs K loop iterations; `/metrics` exposes the live
+Prometheus request counter; `/healthz` reports process uptime and Redis
+connectivity; `/logs/tail?limit=N` returns recent structured JSON request logs.
+
 Cross-origin requests are supported for the grader endpoints; `/stats` is
 restricted to its assigned origin. Every HTTP response includes
 `X-Request-ID` and `X-Process-Time`.

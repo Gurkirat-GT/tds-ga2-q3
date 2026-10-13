@@ -1,15 +1,22 @@
 import hmac
+import json
+import logging
 import os
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
+from time import monotonic
 from uuid import uuid4
 
 import jwt
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 import yaml
 from dotenv import dotenv_values
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 from starlette.types import Message, Receive, Scope, Send
@@ -36,6 +43,16 @@ DEFAULT_CONFIG: dict[str, object] = {
     "api_key": "default-secret-000",
 }
 TRUTHY_VALUES = {"true", "1", "yes", "on"}
+STARTED_AT = monotonic()
+HTTP_REQUESTS = Counter("http_requests_total", "Total HTTP requests")
+REQUEST_LOGS: deque[dict[str, str | int]] = deque(maxlen=1000)
+REQUEST_LOGGER = logging.getLogger("request_json")
+REQUEST_LOGGER.setLevel(logging.INFO)
+REQUEST_LOGGER.propagate = False
+if not REQUEST_LOGGER.handlers:
+    log_handler = logging.StreamHandler()
+    log_handler.setFormatter(logging.Formatter("%(message)s"))
+    REQUEST_LOGGER.addHandler(log_handler)
 
 
 class MetricsFastAPI(FastAPI):
@@ -46,9 +63,13 @@ class MetricsFastAPI(FastAPI):
 
         request_id = str(uuid4())
         started_at = perf_counter()
+        HTTP_REQUESTS.inc()
+        status_code = 500
 
         async def send_with_metrics(message: Message) -> None:
+            nonlocal status_code
             if message["type"] == "http.response.start":
+                status_code = message["status"]
                 headers = [
                     (name, value)
                     for name, value in message.get("headers", [])
@@ -76,7 +97,19 @@ class MetricsFastAPI(FastAPI):
             allow_methods=["GET", "POST"],
             allow_headers=["*"],
         )
-        await cors_app(scope, receive, send_with_metrics)
+        try:
+            await cors_app(scope, receive, send_with_metrics)
+        finally:
+            log_entry: dict[str, str | int] = {
+                "level": "info" if status_code < 500 else "error",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "path": scope["path"],
+                "request_id": request_id,
+                "method": scope["method"],
+                "status": status_code,
+            }
+            REQUEST_LOGS.append(log_entry)
+            REQUEST_LOGGER.info(json.dumps(log_entry, separators=(",", ":")))
 
 
 app = MetricsFastAPI()
@@ -127,10 +160,35 @@ async def health_check() -> dict[str, str]:
 
 
 @app.get("/healthz")
-async def redis_health_check() -> dict[str, str]:
-    if not await redis_client.ping():
-        raise HTTPException(status_code=503, detail="Redis health check failed")
-    return {"status": "ok", "redis": "up"}
+async def redis_health_check() -> dict[str, str | float]:
+    try:
+        redis_up = bool(await redis_client.ping())
+    except RedisError:
+        redis_up = False
+    return {
+        "status": "ok",
+        "uptime_s": max(0.0, monotonic() - STARTED_AT),
+        "redis": "up" if redis_up else "down",
+    }
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/logs/tail")
+async def tail_logs(limit: int = Query(default=100, ge=0, le=1000)) -> list[dict[str, str | int]]:
+    if limit == 0:
+        return []
+    return list(REQUEST_LOGS)[-limit:]
+
+
+@app.get("/work")
+async def do_work(n: int = Query(..., ge=0)) -> dict[str, int | str]:
+    for _ in range(n):
+        pass
+    return {"email": EMAIL, "done": n}
 
 
 @app.post("/hit/{key}")
