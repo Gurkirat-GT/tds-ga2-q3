@@ -30,8 +30,8 @@ Invalid tokens receive HTTP 401 with `{"detail":{"valid":false}}`.
 `APP_*` process environment variables, then applies repeated `set=key=value`
 query overrides. The `api_key` value is always masked in its response.
 
-The only allowed browser origin is `https://dash-u3q2xa.example.com`.
-Every HTTP response includes `X-Request-ID` and `X-Process-Time`.
+Browser requests to the API are allowed from any origin. Every HTTP response
+includes `X-Request-ID` and `X-Process-Time`.
 
 ## Deploy on Vercel
 
