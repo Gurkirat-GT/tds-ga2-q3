@@ -63,7 +63,19 @@ class MetricsFastAPI(FastAPI):
                 message = {**message, "headers": headers}
             await send(message)
 
-        await super().__call__(scope, receive, send_with_metrics)
+        app_call = super().__call__
+        origin = (
+            [ALLOWED_ORIGIN]
+            if scope["path"] == "/stats"
+            else ["*"]
+        )
+        cors_app = CORSMiddleware(
+            app_call,
+            allow_origins=origin,
+            allow_methods=["GET", "POST"],
+            allow_headers=["*"],
+        )
+        await cors_app(scope, receive, send_with_metrics)
 
 
 app = MetricsFastAPI()
@@ -71,14 +83,6 @@ redis_client = Redis.from_url(
     os.environ.get("REDIS_URL", "redis://redis:6379/0"),
     decode_responses=True,
 )
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[ALLOWED_ORIGIN],
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
-
-
 class VerifyRequest(BaseModel):
     token: str
 
