@@ -4,6 +4,7 @@ from time import perf_counter
 from uuid import uuid4
 
 import jwt
+from redis.asyncio import Redis
 import yaml
 from dotenv import dotenv_values
 from fastapi import FastAPI, HTTPException, Query
@@ -65,6 +66,10 @@ class MetricsFastAPI(FastAPI):
 
 
 app = MetricsFastAPI()
+redis_client = Redis.from_url(
+    os.environ.get("REDIS_URL", "redis://redis:6379/0"),
+    decode_responses=True,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -103,6 +108,25 @@ def coerce_config_value(key: str, value: object) -> object:
 @app.get("/")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/healthz")
+async def redis_health_check() -> dict[str, str]:
+    if not await redis_client.ping():
+        raise HTTPException(status_code=503, detail="Redis health check failed")
+    return {"status": "ok", "redis": "up"}
+
+
+@app.post("/hit/{key}")
+async def record_hit(key: str) -> dict[str, int | str]:
+    count = await redis_client.incr(f"hit:{key}")
+    return {"key": key, "count": count}
+
+
+@app.get("/count/{key}")
+async def get_hit_count(key: str) -> dict[str, int | str]:
+    count = await redis_client.get(f"hit:{key}")
+    return {"key": key, "count": int(count) if count is not None else 0}
 
 
 @app.get("/effective-config")

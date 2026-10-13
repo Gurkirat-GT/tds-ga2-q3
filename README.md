@@ -33,8 +33,18 @@ query overrides. The `api_key` value is always masked in its response.
 Browser requests to the API are allowed from any origin. Every HTTP response
 includes `X-Request-ID` and `X-Process-Time`.
 
-## Deploy on Vercel
+## Run the API and Redis with Docker Compose
 
-Import this GitHub repository into Vercel or run `npx vercel --prod` from the
-project root. Vercel detects the FastAPI `app` in `main.py` and installs the
-dependencies from `requirements.txt`.
+```powershell
+docker compose up --build -d
+```
+
+The API is available on `http://localhost:8000`; Redis is only exposed on the
+internal Compose network. Increment counters with `POST /hit/{key}`, inspect
+them with `GET /count/{key}`, and check Redis with `GET /healthz`.
+
+Expose the API publicly with Cloudflare Tunnel:
+
+```powershell
+cloudflared tunnel --url http://localhost:8000
+```
