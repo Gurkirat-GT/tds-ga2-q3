@@ -14,6 +14,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import Message, Receive, Scope, Send
 
 
+ALLOWED_ORIGIN = "https://dash-u3q2xa.example.com"
 EMAIL = "24f3002454@ds.study.iitm.ac.in"
 OIDC_ISSUER = "https://idp.exam.local"
 OIDC_AUDIENCE = "tds-9brnjekr.apps.exam.local"
@@ -72,7 +73,7 @@ redis_client = Redis.from_url(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[ALLOWED_ORIGIN],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
