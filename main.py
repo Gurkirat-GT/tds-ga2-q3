@@ -1,7 +1,11 @@
+import os
+from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
 import jwt
+import yaml
+from dotenv import dotenv_values
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -22,6 +26,14 @@ ed+zclR6BcmNNo/WVfJ4xyCLSf0BCOgdTgW6PdaChd1l9VDetJZVEgC5tkyvXsfI
 SI6iyrYbKR0NEBSqq4XkadEjsCs4F1RncsS4LlgniT7GlkL9Mce3b0wGLs9/7ZIX
 dQIDAQAB
 -----END PUBLIC KEY-----"""
+DEFAULT_CONFIG: dict[str, object] = {
+    "port": 8000,
+    "workers": 1,
+    "debug": False,
+    "log_level": "info",
+    "api_key": "default-secret-000",
+}
+TRUTHY_VALUES = {"true", "1", "yes", "on"}
 
 
 class MetricsFastAPI(FastAPI):
@@ -66,9 +78,78 @@ class VerifyRequest(BaseModel):
     token: str
 
 
+def normalize_config_key(key: object) -> str:
+    normalized = str(key).strip().lower()
+    if normalized.startswith("app_"):
+        normalized = normalized[4:]
+    if normalized == "num_workers":
+        return "workers"
+    return normalized
+
+
+def coerce_config_value(key: str, value: object) -> object:
+    if key in {"port", "workers"}:
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{key} must be an integer",
+            ) from exc
+    if key == "debug":
+        return str(value).strip().lower() in TRUTHY_VALUES
+    return str(value)
+
+
 @app.get("/")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/effective-config")
+async def get_effective_config(
+    set: list[str] = Query(default=[]),
+) -> dict[str, object]:
+    project_dir = Path(__file__).resolve().parent
+    environment = os.environ.get("APP_ENV", "development")
+    config_path = project_dir / f"config.{environment}.yaml"
+    yaml_values = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(yaml_values, dict):
+        raise HTTPException(
+            status_code=500,
+            detail=f"{config_path.name} must contain a YAML mapping",
+        )
+
+    config = DEFAULT_CONFIG.copy()
+    for layer in (
+        yaml_values,
+        {
+            normalize_config_key(key): value
+            for key, value in dotenv_values(project_dir / ".env").items()
+            if value is not None
+        },
+        {
+            normalize_config_key(key): value
+            for key, value in os.environ.items()
+            if key.startswith("APP_") and key != "APP_ENV"
+        },
+    ):
+        for key, value in layer.items():
+            normalized_key = normalize_config_key(key)
+            config[normalized_key] = coerce_config_value(normalized_key, value)
+
+    for override in set:
+        key, separator, value = override.partition("=")
+        normalized_key = normalize_config_key(key)
+        if not separator or not normalized_key:
+            raise HTTPException(
+                status_code=422,
+                detail="each set parameter must use key=value format",
+            )
+        config[normalized_key] = coerce_config_value(normalized_key, value)
+
+    config["api_key"] = "****"
+    return config
 
 
 @app.get("/stats")
