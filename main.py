@@ -1,3 +1,4 @@
+import hmac
 import os
 from pathlib import Path
 from time import perf_counter
@@ -7,7 +8,7 @@ import jwt
 from redis.asyncio import Redis
 import yaml
 from dotenv import dotenv_values
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
@@ -87,6 +88,16 @@ class VerifyRequest(BaseModel):
     token: str
 
 
+class AnalyticsEvent(BaseModel):
+    user: str
+    amount: float
+    ts: int | float
+
+
+class AnalyticsRequest(BaseModel):
+    events: list[AnalyticsEvent]
+
+
 def normalize_config_key(key: object) -> str:
     normalized = str(key).strip().lower()
     if normalized.startswith("app_"):
@@ -132,6 +143,35 @@ async def record_hit(key: str) -> dict[str, int | str]:
 async def get_hit_count(key: str) -> dict[str, int | str]:
     count = await redis_client.get(f"hit:{key}")
     return {"key": key, "count": int(count) if count is not None else 0}
+
+
+@app.post("/analytics")
+async def aggregate_analytics(
+    request: AnalyticsRequest,
+    api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, int | float | str]:
+    assigned_key = os.environ.get("ANALYTICS_API_KEY")
+    if (
+        assigned_key is None
+        or api_key is None
+        or not hmac.compare_digest(api_key, assigned_key)
+    ):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user_totals: dict[str, float] = {}
+    revenue = 0.0
+    for event in request.events:
+        if event.amount > 0:
+            revenue += event.amount
+            user_totals[event.user] = user_totals.get(event.user, 0.0) + event.amount
+
+    return {
+        "email": EMAIL,
+        "total_events": len(request.events),
+        "unique_users": len({event.user for event in request.events}),
+        "revenue": revenue,
+        "top_user": max(user_totals, key=user_totals.get) if user_totals else "",
+    }
 
 
 @app.get("/effective-config")

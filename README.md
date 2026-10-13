@@ -30,8 +30,13 @@ Invalid tokens receive HTTP 401 with `{"detail":{"valid":false}}`.
 `APP_*` process environment variables, then applies repeated `set=key=value`
 query overrides. The `api_key` value is always masked in its response.
 
-Browser requests to the API are allowed from any origin. Every HTTP response
-includes `X-Request-ID` and `X-Process-Time`.
+`POST /analytics` authenticates with the `ANALYTICS_API_KEY` environment
+variable and computes event counts and positive-amount revenue from each
+request batch.
+
+Cross-origin requests are supported for the grader endpoints; `/stats` is
+restricted to its assigned origin. Every HTTP response includes
+`X-Request-ID` and `X-Process-Time`.
 
 ## Run the API and Redis with Docker Compose
 
