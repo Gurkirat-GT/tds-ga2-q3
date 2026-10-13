@@ -15,6 +15,17 @@ Request example:
 GET http://127.0.0.1:8000/stats?values=1,2,3
 ```
 
+Verify an RS256 token issued by the configured identity provider:
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:8000/verify `
+  -Method Post -ContentType 'application/json' `
+  -Body '{"token":"<JWT>"}'
+```
+
+`POST /verify` checks the signature, issuer, exact audience, and expiration.
+Invalid tokens receive HTTP 401 with `{"detail":{"valid":false}}`.
+
 The only allowed browser origin is `https://dash-u3q2xa.example.com`.
 Every HTTP response includes `X-Request-ID` and `X-Process-Time`.
 
